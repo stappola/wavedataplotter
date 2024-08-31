@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Googletest should be cloned separately
+googletest/
+
+# Ignore build directories
+build/
