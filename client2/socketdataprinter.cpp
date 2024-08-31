@@ -81,6 +81,9 @@ void SocketDataPrinter::runThread() {
     }
 }
 
+// NOTE: The implementation assumes the port numbers are not
+// significant. Therefore the frequency is changed on output
+// one event when the port number is not 4001.
 void SocketDataPrinter::checkLimits(const ValueMap& value) {
     /*
     * When the value on the output 3 of the server becomes greater than or equal to 3.0:
@@ -122,7 +125,6 @@ void SocketDataPrinter::receiveData(float data, uint16_t port) {
     if(valueItem != mTargetPorts.end()) {
         valueItem->assignValue(data);
         if(valueItem->getPort() == 4003 && valueItem->isAvailable()) {
-            std::cout << "ValueItem port: " << valueItem->getPort()  << std::endl;
             checkLimits(*valueItem);
         }
     }
