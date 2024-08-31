@@ -46,6 +46,7 @@ void SocketDataPrinter::handlePrintingSchedule() {
     if((currentTime - mMillisecondsSinceEpoch) >= mTimeWindow) {
         uint16_t index{0};
         std::cout << "{\"timestamp\": " << currentTime;
+        std::lock_guard<std::mutex> guard(mPrinterMutex);
         for(auto& port : mTargetPorts) {
             std::cout << ", \"out" << index + 1 << "\": " << "\"" << port.getValue() << "\"";
             port.resetValue();
