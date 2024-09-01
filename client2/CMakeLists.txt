@@ -14,6 +14,8 @@ set(SOURCE_FILES
     main.cpp
     socketdataprinter.cpp
     controlchannel.cpp
+    ${COMMON_SRC}/defaultwriter.cpp
+    ${COMMON_SRC}/defaulttimestamp.cpp
     ${COMMON_SRC}/socketreaderthread.cpp
 )
 

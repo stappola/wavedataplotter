@@ -1,25 +1,30 @@
 #include "socketdataproviderif.h"
+#include "defaulttimestamp.h"
 
 #include <vector>
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include <chrono>
 #include <sstream>
 #include <iomanip>
 
 static const float TRIGGER_BOUND = 3.0;
 
+// Forward decratations
+class OutputWriterIF;
 class ControlChannelIF;
 
 class SocketDataPrinter : public SocketDataProviderIF {
     public:
         SocketDataPrinter(const std::vector<uint16_t>& targetPorts,
-            int64_t timeWindow, ControlChannelIF& ctrlChannelIF);
+            int64_t timeWindow, ControlChannelIF& ctrlChannelIF, OutputWriterIF& outputWriter);
         ~SocketDataPrinter();
     public:
         void startPrinterThread();
         void stopPrinterThread();
+        void installTimestampService(TimestampProviderIF* timestampService);
+        // A small concession to make unittesting easier; should be private, really.
+        void handlePrintingSchedule();
     private:  // From SocketDataProviderIF
         virtual void receiveData(float data, uint16_t port) override;
     private:  // Helpers
@@ -28,7 +33,6 @@ class SocketDataPrinter : public SocketDataProviderIF {
         void join();
         void setCurrentTimeStamp();
         uint64_t getCurrentTimeStamp() const;
-        void handlePrintingSchedule();
     private:
         static constexpr float NOT_AVAILABLE = 3.402823E+38;
         class ValueMap {
@@ -40,22 +44,25 @@ class SocketDataPrinter : public SocketDataProviderIF {
                 void resetValue() { mValue = NOT_AVAILABLE; }
                 void assignValue(float value) { mValue = value; }
                 float getFltValue() const { return mValue; }
-                std::string getStrValue() const {
+                std::string getStrValue() {
                     return mValue == NOT_AVAILABLE ? "--" : formatValue();
                 }
                 uint16_t getPort() const { return mTargetPort; }
                 bool isAvailable() const { return mValue != NOT_AVAILABLE; }
             private:
-                std::string formatValue() const {
-                    std::stringstream stream;
-                    stream << std::fixed << std::setprecision(1) << mValue;
-                    return stream.str();
+                std::string formatValue() {
+                    mFormatStream.clear();
+                    mFormatStream.str(std::string());
+                    mFormatStream << std::fixed << std::setprecision(1) << mValue;
+                    return mFormatStream.str();
                 }
             private:  // Data
                 float mValue;
                 uint16_t mTargetPort;
+                std::stringstream mFormatStream;
         };
-        void checkLimits(const ValueMap& value);
+        void checkLimits(ValueMap& value);
+        void setInitialProperties(ValueMap& value);
     private:  // Data
         std::atomic_bool mRunning;
         std::mutex mPrinterMutex;
@@ -63,6 +70,10 @@ class SocketDataPrinter : public SocketDataProviderIF {
         std::thread mTimestampThread;
         int64_t mTimeWindow{0};
         int64_t mMillisecondsSinceEpoch;
-        float mCurrentControlValue{0};
+        float mCurrentControlValue{NOT_AVAILABLE};
         ControlChannelIF& mCtrlChannel;
+        OutputWriterIF& mOutputWriter;
+        std::stringstream mOutputStream;
+        DefaultTimestamp mDefaultTimestamp;
+        TimestampProviderIF* mTimestampService{nullptr};
 };

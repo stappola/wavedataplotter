@@ -1,16 +1,20 @@
 #include "socketdataprinter.h"
+#include "dataoutputif.h"
 
-#include <string>
-#include <iostream>
-#include <iomanip>
 #include <algorithm>
 
 
-SocketDataPrinter::SocketDataPrinter(const std::vector<uint16_t>& targetPorts, int64_t timeWindow)
-    : mTimeWindow(timeWindow) {
+SocketDataPrinter::SocketDataPrinter(const std::vector<uint16_t>& targetPorts,
+    int64_t timeWindow, OutputWriterIF& outputWriter)
+        : mTimeWindow(timeWindow)
+        , mOutputWriter(outputWriter) {
     for(const auto& port : targetPorts) {
         mTargetPorts.push_back(SocketDataPrinter::ValueMap(port));
     }
+}
+
+void SocketDataPrinter::installTimestampService(TimestampProviderIF* timestampService) {
+    mTimestampService = timestampService == nullptr ? &mDefaultTimestamp : timestampService;
     setCurrentTimeStamp();
 }
 
@@ -30,29 +34,30 @@ void SocketDataPrinter::join() {
 }
 
 void SocketDataPrinter::setCurrentTimeStamp() {
-    const auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    mMillisecondsSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    mMillisecondsSinceEpoch = mTimestampService == nullptr ?
+        mDefaultTimestamp.getCurrentTimeStamp() : mTimestampService->getCurrentTimeStamp();
 }
 
 uint64_t SocketDataPrinter::getCurrentTimeStamp() const {
-    const auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    return mTimestampService == nullptr ?
+        mDefaultTimestamp.getCurrentTimeStamp() : mTimestampService->getCurrentTimeStamp();
 }
 
 void SocketDataPrinter::handlePrintingSchedule() {
     int64_t currentTime(getCurrentTimeStamp());
     if((currentTime - mMillisecondsSinceEpoch) >= mTimeWindow) {
         uint16_t index{0};
-        std::cout << "{\"timestamp\": " << currentTime;
+        mOutputStream.clear();
+        mOutputStream.str(std::string());
+        mOutputStream << "{\"timestamp\": " << currentTime;
         std::lock_guard<std::mutex> guard(mPrinterMutex);
         for(auto& port : mTargetPorts) {
-            std::cout << ", \"out" << index + 1 << "\": " << "\"" << port.getValue() << "\"";
+            mOutputStream << ", \"out" << index + 1 << "\": " << "\"" << port.getValue() << "\"";
             port.resetValue();
             index++;
         }
-        std::cout << "}" << std::endl;
+        mOutputStream << "}" << std::endl;
+        mOutputWriter.writeToStream(mOutputStream.str());
         mMillisecondsSinceEpoch = currentTime;
     }
 }

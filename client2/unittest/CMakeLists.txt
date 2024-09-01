@@ -23,6 +23,7 @@ add_executable(
   
     # System under test
     ../socketdataprinter.cpp
+    ../../common/src/defaulttimestamp.cpp
 )
 
 target_link_libraries(

@@ -1,16 +1,16 @@
 #include "socketdataprinter.h"
 #include "controlchannelif.h"
+#include "dataoutputif.h"
 
-#include <string>
-#include <iostream>
-#include <iomanip>
+// #include <string>
 #include <algorithm>
 
 
 SocketDataPrinter::SocketDataPrinter(const std::vector<uint16_t>& targetPorts,
-    int64_t timeWindow, ControlChannelIF& ctrlChannelIF)
-    : mTimeWindow(timeWindow)
-    , mCtrlChannel(ctrlChannelIF) {
+    int64_t timeWindow, ControlChannelIF& ctrlChannelIF, OutputWriterIF& outputWriter)
+        : mTimeWindow(timeWindow)
+        , mCtrlChannel(ctrlChannelIF)
+        , mOutputWriter(outputWriter) {
     for(const auto& port : targetPorts) {
         mTargetPorts.push_back(SocketDataPrinter::ValueMap(port));
     }
@@ -36,31 +36,36 @@ void SocketDataPrinter::join() {
     }
 }
 
+void SocketDataPrinter::installTimestampService(TimestampProviderIF* timestampService) {
+    mTimestampService = timestampService == nullptr ? &mDefaultTimestamp : timestampService;
+    setCurrentTimeStamp();
+}
+
 void SocketDataPrinter::setCurrentTimeStamp() {
-    const auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    mMillisecondsSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-    std::cout << "Current time in milliseconds is: " << mMillisecondsSinceEpoch << std::endl;
+    mMillisecondsSinceEpoch = mTimestampService == nullptr ?
+        mDefaultTimestamp.getCurrentTimeStamp() : mTimestampService->getCurrentTimeStamp();
 }
 
 uint64_t SocketDataPrinter::getCurrentTimeStamp() const {
-    const auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    return mTimestampService == nullptr ?
+        mDefaultTimestamp.getCurrentTimeStamp() : mTimestampService->getCurrentTimeStamp();
 }
 
 void SocketDataPrinter::handlePrintingSchedule() {
     int64_t currentTime(getCurrentTimeStamp());
     if((currentTime - mMillisecondsSinceEpoch) >= mTimeWindow) {
         uint16_t index{0};
-        std::cout << "{\"timestamp\": " << currentTime;
+        mOutputStream.clear();
+        mOutputStream.str(std::string());
+        mOutputStream << "{\"timestamp\": " << currentTime;
         std::lock_guard<std::mutex> guard(mPrinterMutex);
         for(auto& port : mTargetPorts) {
-            std::cout << ", \"out" << index + 1 << "\": " << "\"" << port.getStrValue() << "\"";
+            mOutputStream << ", \"out" << index + 1 << "\": " << "\"" << port.getStrValue() << "\"";
             port.resetValue();
             index++;
         }
-        std::cout << "}" << std::endl;
+        mOutputStream << "}" << std::endl;
+        mOutputWriter.writeToStream(mOutputStream.str());
         mMillisecondsSinceEpoch = currentTime;
     }
 }
@@ -71,7 +76,6 @@ void SocketDataPrinter::startPrinterThread() {
 }
 
 void SocketDataPrinter::stopPrinterThread() {
-    std::cout << "SocketDataPrinter::stopThread()" << std::endl;
     mRunning.store(false);
 }
 
@@ -81,19 +85,33 @@ void SocketDataPrinter::runThread() {
     }
 }
 
-// NOTE: The implementation assumes the port numbers are not
-// significant. Therefore the frequency is changed on output
-// one event when the port number is not 4001.
-void SocketDataPrinter::checkLimits(const ValueMap& value) {
+// Set the server output to known values according to the requirements.
+void SocketDataPrinter::setInitialProperties(ValueMap& value) {
+    if(value.getFltValue() >= TRIGGER_BOUND) {
+        mCtrlChannel.sendWriteCommand(OBJECT1, FREQUENCY, 1000);
+        mCtrlChannel.sendWriteCommand(OBJECT1, AMPLITUDE, 8000);
+    } else if(value.getFltValue() < TRIGGER_BOUND) {
+        mCtrlChannel.sendWriteCommand(OBJECT1, FREQUENCY, 2000);
+        mCtrlChannel.sendWriteCommand(OBJECT1, AMPLITUDE, 4000);
+    } // no else
+
+    mCurrentControlValue = value.getFltValue();
+}
+
+// NOTE: The implementation assumes that the port numbers are not significant.
+// Therefore the frequency is changed on output 1 even when the port number is not 4001.
+void SocketDataPrinter::checkLimits(ValueMap& value) {
+    if(mCurrentControlValue == NOT_AVAILABLE) {
+        setInitialProperties(value);
+        return;
+    }
+
     /*
     * When the value on the output 3 of the server becomes greater than or equal to 3.0:
     *    - Set the frequency of server output 1 to 1Hz.
     *    - Set the amplitude of server output 1 to 8000.
     */
     if(value.getFltValue() >= TRIGGER_BOUND && mCurrentControlValue < TRIGGER_BOUND) {
-        std::cout << "SocketDataPrinter::checkLimits(), value is "
-            << value.getStrValue() << ", current control value is "
-            << mCurrentControlValue << std::endl;
         mCtrlChannel.sendWriteCommand(OBJECT1, FREQUENCY, 1000);
         mCtrlChannel.sendWriteCommand(OBJECT1, AMPLITUDE, 8000);
     /*
@@ -102,21 +120,14 @@ void SocketDataPrinter::checkLimits(const ValueMap& value) {
     *    - Set the amplitude of server output 1 to 4000.
     */
     } else if(mCurrentControlValue >= TRIGGER_BOUND && value.getFltValue() < TRIGGER_BOUND) {
-        std::cout << "SocketDataPrinter::checkLimits(), value is "
-            << value.getStrValue() << ", current control value is "
-            << mCurrentControlValue << std::endl;
         mCtrlChannel.sendWriteCommand(OBJECT1, FREQUENCY, 2000);
         mCtrlChannel.sendWriteCommand(OBJECT1, AMPLITUDE, 4000);
-    } else {
-        std::cout << "SocketDataPrinter::checkLimits(), value is "
-            << value.getStrValue() << ", current control value is "
-            << mCurrentControlValue << std::endl;
-    }
+    } // no else
+
     mCurrentControlValue = value.getFltValue();
 }
 
 void SocketDataPrinter::receiveData(float data, uint16_t port) {
-    std::cout << "SocketDataPrinter::receiveData() - Data: " << data << ", Port: " << port << std::endl;
     std::lock_guard<std::mutex> guard(mPrinterMutex);
     auto valueItem = std::find_if(mTargetPorts.begin(), mTargetPorts.end(), [&port](const ValueMap& entry) {
         return port == entry.getPort();
@@ -124,7 +135,8 @@ void SocketDataPrinter::receiveData(float data, uint16_t port) {
 
     if(valueItem != mTargetPorts.end()) {
         valueItem->assignValue(data);
-        if(valueItem->getPort() == 4003 && valueItem->isAvailable()) {
+        // Check the server output number 3, assuming port number itself is not significant
+        if(valueItem - mTargetPorts.begin() == 2 && valueItem->isAvailable()) {
             checkLimits(*valueItem);
         }
     }

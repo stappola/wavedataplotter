@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <string>
 
+
 namespace {
     // https://stackoverflow.com/questions/29242/off-the-shelf-c-hex-dump-code
     void hexdump(void* ptr, int buflen) {
@@ -46,6 +47,10 @@ void ControlChannel::encodeUint16(uint16_t twoBytes, uint8_t* data) {
     *encodePtr = (uint8_t)(twoBytes & 0x00FF); encodePtr; 
 }
 
+
+// TODO: Time permitting, implement a semaphore-like system that
+// allows the control channel to operate completely asynchronously, in
+// order to prevent data receiving from slowing because of reads & writes.
 void ControlChannel::sendReadCommand(uint16_t object, uint16_t property) {
     uint8_t sendBuf[READ_MESSAGE_LENGTH] = {0};
     const std::string hostname{"127.0.0.1"};
@@ -59,9 +64,7 @@ void ControlChannel::sendReadCommand(uint16_t object, uint16_t property) {
     encodeUint16(object, &sendBuf[2]);
     encodeUint16(property, &sendBuf[4]);
 
-    hexdump(sendBuf, sizeof(sendBuf));
     int bytes = ::sendto(sock, sendBuf, sizeof(sendBuf), 0, reinterpret_cast<sockaddr*>(&destination), sizeof(destination));
-    std::cout << bytes << " bytes sent" << std::endl;
     close(sock);
 }
 
@@ -79,7 +82,6 @@ void ControlChannel::sendWriteCommand(uint16_t object, uint16_t property, uint16
     encodeUint16(property, &sendBuf[4]);
     encodeUint16(value, &sendBuf[6]);
 
-    hexdump(sendBuf, sizeof(sendBuf));
     int bytes = ::sendto(sock, sendBuf, sizeof(sendBuf), 0, reinterpret_cast<sockaddr*>(&destination), sizeof(destination));
     close(sock);
 }

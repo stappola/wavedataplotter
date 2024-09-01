@@ -13,6 +13,8 @@ include_directories(${COMMON_INC})
 set(SOURCE_FILES
     main.cpp
     socketdataprinter.cpp
+    ${COMMON_SRC}/defaultwriter.cpp
+    ${COMMON_SRC}/defaulttimestamp.cpp
     ${COMMON_SRC}/socketreaderthread.cpp
 )
 

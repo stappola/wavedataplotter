@@ -1,5 +1,6 @@
 #include "socketreaderthread.h"
 #include "socketdataprinter.h"
+#include "defaultwriter.h"
 
 #include <iostream>
 
@@ -8,8 +9,9 @@ int main(void) {
     const int64_t timeWindow(100);
 
     // Create objects
+    DefaultWriter stdOutWriter;
     std::vector<uint16_t> portVector{4001, 4002, 4003};
-    SocketDataPrinter dataPrinter(portVector, timeWindow);
+    SocketDataPrinter dataPrinter(portVector, timeWindow, stdOutWriter);
     SocketReaderThread thread1(portVector.at(0), dataPrinter);
     SocketReaderThread thread2(portVector.at(1), dataPrinter);
     SocketReaderThread thread3(portVector.at(2), dataPrinter);
