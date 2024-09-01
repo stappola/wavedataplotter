@@ -7,7 +7,7 @@
 #include <fstream>
 #include <iostream>
 
-static const char* DEFAULT_OUTPUT_FILE_NAME = "output.txt";
+
 using namespace ::testing;
 
 class MockTimestampProvider : public TimestampProviderIF {
@@ -26,17 +26,6 @@ class Client2Fixture : public testing::Test {
             mTimestampServiceMock = std::make_unique<testing::StrictMock<MockTimestampProvider>>();
         }
         virtual ~Client2Fixture() {}
-    public:
-        bool verifyOutputExists() {
-            try {
-                std::ifstream infile(DEFAULT_OUTPUT_FILE_NAME, std::ios::in | std::ios::ate);
-                return !infile.fail();
-            }
-            catch(const std::exception& e) {
-                std::cerr << "Exception when reading input file" << std::endl;
-            }
-            return false;
-        }
     protected:
         void expectGlitchChanceUpdate() {
             EXPECT_CALL(*mControlChannelMock, sendWriteCommand(1, 300, 0)).Times(1);
@@ -46,6 +35,7 @@ class Client2Fixture : public testing::Test {
         std::unique_ptr<testing::StrictMock<MockOutputWriter>> mOutputWriterMock;
         std::unique_ptr<testing::StrictMock<MockControlChannel>> mControlChannelMock;
         std::unique_ptr<testing::StrictMock<MockTimestampProvider>> mTimestampServiceMock;
+        DefaultTimestamp mDefaultTimestampService;
 };
 
 TEST_F(Client2Fixture, ControlChannelTests) {
@@ -90,7 +80,6 @@ TEST_F(Client2Fixture, PrintingTests) {
     std::vector<uint16_t> portVector{ 1, 2, 4003, 4, 5 };
     std::unique_ptr<SocketDataPrinter> systemUnderTest = 
         std::make_unique<SocketDataPrinter>(portVector, 20, *mControlChannelMock, *mOutputWriterMock);
-    std::unique_ptr<FakeSocketReader> socketReaderMock(std::make_unique<FakeSocketReader>(*systemUnderTest));
 
     EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(20));
     systemUnderTest->installTimestampService(mTimestampServiceMock.get());
@@ -103,8 +92,66 @@ TEST_F(Client2Fixture, PrintingTests) {
     EXPECT_CALL(*mOutputWriterMock, writeToStream(_)).Times(1);
     EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(42));
     systemUnderTest->handlePrintingSchedule();
+}
 
-    
+TEST_F(Client2Fixture, PrintLoopTest100ms) {
+    expectGlitchChanceUpdate();
+    const uint64_t timeWindow{100};
+    std::vector<uint16_t> portVector{ 1, 2, 4003, 4, 5 };
+    std::unique_ptr<SocketDataPrinter> systemUnderTest = 
+        std::make_unique<SocketDataPrinter>(portVector, timeWindow, *mControlChannelMock, *mOutputWriterMock);
+
+    EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(mDefaultTimestampService.getCurrentTimeStamp()));
+    systemUnderTest->installTimestampService(mTimestampServiceMock.get());
+
+    uint64_t now{mDefaultTimestampService.getCurrentTimeStamp()};
+    uint64_t start{now};
+    while((now - start) < timeWindow) {
+        EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(now));
+        EXPECT_CALL(*mOutputWriterMock, writeToStream(_)).Times(0);
+        systemUnderTest->handlePrintingSchedule();
+        now = mDefaultTimestampService.getCurrentTimeStamp();
+    }
+
+    // Simulate a mmillisecond passing
+    while((now - start) != timeWindow) {
+        now = mDefaultTimestampService.getCurrentTimeStamp();
+    }
+
+    EXPECT_EQ((now - start), timeWindow);
+    EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(now));
+    EXPECT_CALL(*mOutputWriterMock, writeToStream(_)).Times(1);
+    systemUnderTest->handlePrintingSchedule();
+}
+
+TEST_F(Client2Fixture, PrintLoopTest20ms) {
+    expectGlitchChanceUpdate();
+    const uint64_t timeWindow{20};
+    std::vector<uint16_t> portVector{ 1, 2, 4003, 4, 5 };
+    std::unique_ptr<SocketDataPrinter> systemUnderTest = 
+        std::make_unique<SocketDataPrinter>(portVector, timeWindow, *mControlChannelMock, *mOutputWriterMock);
+
+    EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(mDefaultTimestampService.getCurrentTimeStamp()));
+    systemUnderTest->installTimestampService(mTimestampServiceMock.get());
+
+    uint64_t now{mDefaultTimestampService.getCurrentTimeStamp()};
+    uint64_t start{now};
+    while((now - start) < timeWindow) {
+        EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(now));
+        EXPECT_CALL(*mOutputWriterMock, writeToStream(_)).Times(0);
+        systemUnderTest->handlePrintingSchedule();
+        now = mDefaultTimestampService.getCurrentTimeStamp();
+    }
+
+    // Simulate a mmillisecond passing
+    while((now - start) != timeWindow) {
+        now = mDefaultTimestampService.getCurrentTimeStamp();
+    }
+
+    EXPECT_EQ((now - start), timeWindow);
+    EXPECT_CALL(*mTimestampServiceMock, getCurrentTimeStamp()).Times(1).WillOnce(Return(now));
+    EXPECT_CALL(*mOutputWriterMock, writeToStream(_)).Times(1);
+    systemUnderTest->handlePrintingSchedule();
 }
 
 
