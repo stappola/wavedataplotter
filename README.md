@@ -13,7 +13,7 @@ make
 The application can be stopped by pressing 'Enter' or Ctrl+C.
 
 # Build & run client2
-cd client2
+cd client2  
 mkdir build  
 cd build  
 cmake ..  
@@ -23,11 +23,11 @@ make
 The application can be stopped by pressing 'Enter' or Ctrl+C.
 
 # Build & run client2 unit tests
-cd client2/unittest
+cd client2/unittest  
 mkdir build  
 cd build  
 cmake ..  
-make
+make  
 ./client2_unittest.app
 
 # Design principles
