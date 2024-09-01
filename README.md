@@ -3,7 +3,7 @@ Displays frequency data received from a server in time-domain. The data seems to
 changes over time, which would make them look more or less like a sine wave when visualized as a graph.
 
 # Build & run client1
-cd client1
+cd client1  
 mkdir build  
 cd build  
 cmake ..  
