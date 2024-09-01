@@ -7,7 +7,7 @@ cd client1
 mkdir build  
 cd build  
 cmake ..  
-make
+make  
 ./client1
 
 The application can be stopped by pressing 'Enter' or Ctrl+C.
@@ -17,7 +17,7 @@ cd client2
 mkdir build  
 cd build  
 cmake ..  
-make
+make  
 ./client2
 
 The application can be stopped by pressing 'Enter' or Ctrl+C.
